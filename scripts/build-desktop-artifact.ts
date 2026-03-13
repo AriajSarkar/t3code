@@ -102,7 +102,7 @@ function getDefaultArch(platform: typeof BuildPlatform.Type): typeof BuildArch.T
 class BuildScriptError extends Data.TaggedError("BuildScriptError")<{
   readonly message: string;
   readonly cause?: unknown;
-}> { }
+}> {}
 
 function resolveGitCommitHash(repoRoot: string): string {
   const result = spawnSync("git", ["rev-parse", "--short=12", "HEAD"], {
@@ -419,9 +419,9 @@ function resolveDesktopRuntimeDependencies(
 
 function parseGitHubRepository(value: string):
   | {
-    readonly owner: string;
-    readonly repo: string;
-  }
+      readonly owner: string;
+      readonly repo: string;
+    }
   | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -449,11 +449,11 @@ function parseGitHubRepository(value: string):
 
 function resolveGitHubPublishConfig():
   | {
-    readonly provider: "github";
-    readonly owner: string;
-    readonly repo: string;
-    readonly releaseType: "release";
-  }
+      readonly provider: "github";
+      readonly owner: string;
+      readonly repo: string;
+      readonly releaseType: "release";
+    }
   | undefined {
   const envRepo =
     process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY?.trim() ||
