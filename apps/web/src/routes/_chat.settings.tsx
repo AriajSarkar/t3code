@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
+import { LoaderIcon } from "lucide-react";
 import { type ProviderKind } from "@t3tools/contracts";
 import { getModelOptions, normalizeModelSlug } from "@t3tools/shared/model";
 import { MAX_CUSTOM_MODEL_LENGTH, useAppSettings } from "../appSettings";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { isElectron } from "../env";
+import { useDesktopUpdateState } from "../hooks/useDesktopUpdateState";
 import { useTheme } from "../hooks/useTheme";
 import { serverConfigQueryOptions } from "../lib/serverReactQuery";
 import { ensureNativeApi } from "../nativeApi";
@@ -94,6 +96,7 @@ function patchCustomModels(provider: ProviderKind, models: string[]) {
 
 function SettingsRouteView() {
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const desktopUpdateState = useDesktopUpdateState();
   const { settings, defaults, updateSettings } = useAppSettings();
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
   const [isOpeningKeybindings, setIsOpeningKeybindings] = useState(false);
@@ -111,6 +114,11 @@ function SettingsRouteView() {
   const codexHomePath = settings.codexHomePath;
   const keybindingsConfigPath = serverConfigQuery.data?.keybindingsConfigPath ?? null;
   const availableEditors = serverConfigQuery.data?.availableEditors;
+  const displayedAppVersion =
+    isElectron && desktopUpdateState?.currentVersion
+      ? desktopUpdateState.currentVersion
+      : APP_VERSION;
+  const showVersionDownloadSpinner = isElectron && desktopUpdateState?.status === "downloading";
 
   const openKeybindingsFile = useCallback(() => {
     if (!keybindingsConfigPath) return;
@@ -203,7 +211,7 @@ function SettingsRouteView() {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         {isElectron && (
-          <div className="drag-region flex h-[52px] shrink-0 items-center border-b border-border px-5">
+          <div className="drag-region flex h-13 shrink-0 items-center border-b border-border px-5">
             <span className="text-xs font-medium tracking-wide text-muted-foreground/70">
               Settings
             </span>
@@ -237,11 +245,10 @@ function SettingsRouteView() {
                         type="button"
                         role="radio"
                         aria-checked={selected}
-                        className={`flex w-full items-start justify-between rounded-lg border px-3 py-2 text-left transition-colors ${
-                          selected
-                            ? "border-primary/60 bg-primary/8 text-foreground"
-                            : "border-border bg-background text-muted-foreground hover:bg-accent"
-                        }`}
+                        className={`flex w-full items-start justify-between rounded-lg border px-3 py-2 text-left transition-colors ${selected
+                          ? "border-primary/60 bg-primary/8 text-foreground"
+                          : "border-border bg-background text-muted-foreground hover:bg-accent"
+                          }`}
                         onClick={() => setTheme(option.value)}
                       >
                         <span className="flex flex-col">
@@ -681,7 +688,17 @@ function SettingsRouteView() {
                     Current version of the application.
                   </p>
                 </div>
-                <code className="text-xs font-medium text-muted-foreground">{APP_VERSION}</code>
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  {showVersionDownloadSpinner ? (
+                    <LoaderIcon
+                      aria-hidden="true"
+                      className="size-3.5 animate-spin text-foreground"
+                    />
+                  ) : null}
+                  <code className="text-xs font-medium text-muted-foreground">
+                    {displayedAppVersion}
+                  </code>
+                </span>
               </div>
             </section>
           </div>

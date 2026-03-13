@@ -4,7 +4,6 @@ import {
   FolderIcon,
   GitPullRequestIcon,
   PlusIcon,
-  RocketIcon,
   SettingsIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -48,17 +47,15 @@ import { serverConfigQueryOptions } from "../lib/serverReactQuery";
 import { readNativeApi } from "../nativeApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useDesktopUpdateState } from "../hooks/useDesktopUpdateState";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { toastManager } from "./ui/toast";
 import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
-  getDesktopUpdateButtonTooltip,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
-  shouldHighlightDesktopUpdateError,
-  shouldShowDesktopUpdateButton,
   shouldToastDesktopUpdateActionResult,
 } from "./desktopUpdate.logic";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
@@ -240,9 +237,8 @@ function SortableProjectItem({
         transform: CSS.Translate.toString(transform),
         transition,
       }}
-      className={`group/menu-item relative rounded-md ${
-        isDragging ? "z-20 opacity-80" : ""
-      } ${isOver && !isDragging ? "ring-1 ring-primary/40" : ""}`}
+      className={`group/menu-item relative rounded-md ${isDragging ? "z-20 opacity-80" : ""
+        } ${isOver && !isDragging ? "ring-1 ring-primary/40" : ""}`}
       data-sidebar="menu-item"
       data-slot="sidebar-menu-item"
     >
@@ -291,6 +287,7 @@ export default function Sidebar() {
   const addProjectInputRef = useRef<HTMLInputElement | null>(null);
   const [renamingThreadId, setRenamingThreadId] = useState<ThreadId | null>(null);
   const [renamingTitle, setRenamingTitle] = useState("");
+  const previousDesktopUpdateStatusRef = useRef<DesktopUpdateState["status"] | null>(null);
   const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<
     ReadonlySet<ProjectId>
   >(() => new Set());
@@ -298,7 +295,7 @@ export default function Sidebar() {
   const renamingInputRef = useRef<HTMLInputElement | null>(null);
   const dragInProgressRef = useRef(false);
   const suppressProjectClickAfterDragRef = useRef(false);
-  const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
+  const desktopUpdateState = useDesktopUpdateState();
   const selectedThreadIds = useThreadSelectionStore((s) => s.selectedThreadIds);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((s) => s.rangeSelectTo);
@@ -964,43 +961,26 @@ export default function Sidebar() {
   }, [clearSelection, selectedThreadIds.size]);
 
   useEffect(() => {
-    if (!isElectron) return;
-    const bridge = window.desktopBridge;
+    if (!desktopUpdateState) return;
+    const previousStatus = previousDesktopUpdateStatusRef.current;
     if (
-      !bridge ||
-      typeof bridge.getUpdateState !== "function" ||
-      typeof bridge.onUpdateState !== "function"
+      previousStatus !== null &&
+      previousStatus !== "downloaded" &&
+      desktopUpdateState.status === "downloaded"
     ) {
-      return;
+      toastManager.add({
+        type: "success",
+        title: "Update ready",
+        description: "Restart the app from the update button to install it.",
+      });
     }
+    previousDesktopUpdateStatusRef.current = desktopUpdateState.status;
+  }, [desktopUpdateState]);
 
-    let disposed = false;
-    let receivedSubscriptionUpdate = false;
-    const unsubscribe = bridge.onUpdateState((nextState) => {
-      if (disposed) return;
-      receivedSubscriptionUpdate = true;
-      setDesktopUpdateState(nextState);
-    });
-
-    void bridge
-      .getUpdateState()
-      .then((nextState) => {
-        if (disposed || receivedSubscriptionUpdate) return;
-        setDesktopUpdateState(nextState);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      unsubscribe();
-    };
-  }, []);
-
-  const showDesktopUpdateButton = isElectron && shouldShowDesktopUpdateButton(desktopUpdateState);
-
-  const desktopUpdateTooltip = desktopUpdateState
-    ? getDesktopUpdateButtonTooltip(desktopUpdateState)
-    : "Update available";
+  const displayedAppVersion =
+    isElectron && desktopUpdateState?.currentVersion
+      ? desktopUpdateState.currentVersion
+      : APP_VERSION;
 
   const desktopUpdateButtonDisabled = isDesktopUpdateButtonDisabled(desktopUpdateState);
   const desktopUpdateButtonAction = desktopUpdateState
@@ -1012,17 +992,6 @@ export default function Sidebar() {
     desktopUpdateState && showArm64IntelBuildWarning
       ? getArm64IntelBuildWarningDescription(desktopUpdateState)
       : null;
-  const desktopUpdateButtonInteractivityClasses = desktopUpdateButtonDisabled
-    ? "cursor-not-allowed opacity-60"
-    : "hover:bg-accent hover:text-foreground";
-  const desktopUpdateButtonClasses =
-    desktopUpdateState?.status === "downloaded"
-      ? "text-emerald-500"
-      : desktopUpdateState?.status === "downloading"
-        ? "text-sky-400"
-        : shouldHighlightDesktopUpdateError(desktopUpdateState)
-          ? "text-rose-500 animate-pulse"
-          : "text-amber-500 animate-pulse";
   const newThreadShortcutLabel = useMemo(
     () =>
       shortcutLabelForCommand(keybindings, "chat.newLocal") ??
@@ -1124,7 +1093,7 @@ export default function Sidebar() {
           }
         />
         <TooltipPopup side="bottom" sideOffset={2}>
-          Version {APP_VERSION}
+          Version {displayedAppVersion}
         </TooltipPopup>
       </Tooltip>
     </div>
@@ -1134,27 +1103,8 @@ export default function Sidebar() {
     <>
       {isElectron ? (
         <>
-          <SidebarHeader className="drag-region h-[52px] flex-row items-center gap-2 px-4 py-0 pl-[90px]">
+          <SidebarHeader className="drag-region h-13 flex-row items-center gap-2 px-4 py-0 pl-22.5">
             {wordmark}
-            {showDesktopUpdateButton && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={desktopUpdateTooltip}
-                      aria-disabled={desktopUpdateButtonDisabled || undefined}
-                      disabled={desktopUpdateButtonDisabled}
-                      className={`inline-flex size-7 ml-auto mt-1.5 items-center justify-center rounded-md text-muted-foreground transition-colors ${desktopUpdateButtonInteractivityClasses} ${desktopUpdateButtonClasses}`}
-                      onClick={handleDesktopUpdateButtonClick}
-                    >
-                      <RocketIcon className="size-3.5" />
-                    </button>
-                  }
-                />
-                <TooltipPopup side="bottom">{desktopUpdateTooltip}</TooltipPopup>
-              </Tooltip>
-            )}
           </SidebarHeader>
         </>
       ) : (
@@ -1205,9 +1155,8 @@ export default function Sidebar() {
                 }
               >
                 <PlusIcon
-                  className={`size-3.5 transition-transform duration-150 ${
-                    shouldShowProjectPathEntry ? "rotate-45" : "rotate-0"
-                  }`}
+                  className={`size-3.5 transition-transform duration-150 ${shouldShowProjectPathEntry ? "rotate-45" : "rotate-0"
+                    }`}
                 />
               </TooltipTrigger>
               <TooltipPopup side="right">Add project</TooltipPopup>
@@ -1230,11 +1179,10 @@ export default function Sidebar() {
               <div className="flex gap-1.5">
                 <input
                   ref={addProjectInputRef}
-                  className={`min-w-0 flex-1 rounded-md border bg-secondary px-2 py-1 font-mono text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none ${
-                    addProjectError
-                      ? "border-red-500/70 focus:border-red-500"
-                      : "border-border focus:border-ring"
-                  }`}
+                  className={`min-w-0 flex-1 rounded-md border bg-secondary px-2 py-1 font-mono text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none ${addProjectError
+                    ? "border-red-500/70 focus:border-red-500"
+                    : "border-border focus:border-ring"
+                    }`}
                   placeholder="/path/to/project"
                   value={newCwd}
                   onChange={(event) => {
@@ -1331,9 +1279,8 @@ export default function Sidebar() {
                               }}
                             >
                               <ChevronRightIcon
-                                className={`-ml-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 ${
-                                  project.expanded ? "rotate-90" : ""
-                                }`}
+                                className={`-ml-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 ${project.expanded ? "rotate-90" : ""
+                                  }`}
                               />
                               <ProjectFavicon cwd={project.cwd} />
                               <span className="flex-1 truncate text-xs font-medium text-foreground/90">
@@ -1477,9 +1424,8 @@ export default function Sidebar() {
                                             className={`inline-flex items-center gap-1 text-[10px] ${threadStatus.colorClass}`}
                                           >
                                             <span
-                                              className={`h-1.5 w-1.5 rounded-full ${threadStatus.dotClass} ${
-                                                threadStatus.pulse ? "animate-pulse" : ""
-                                              }`}
+                                              className={`h-1.5 w-1.5 rounded-full ${threadStatus.dotClass} ${threadStatus.pulse ? "animate-pulse" : ""
+                                                }`}
                                             />
                                             <span className="hidden md:inline">
                                               {threadStatus.label}
@@ -1545,11 +1491,10 @@ export default function Sidebar() {
                                           </span>
                                         )}
                                         <span
-                                          className={`text-[10px] ${
-                                            isHighlighted
-                                              ? "text-foreground/72 dark:text-foreground/82"
-                                              : "text-muted-foreground/40"
-                                          }`}
+                                          className={`text-[10px] ${isHighlighted
+                                            ? "text-foreground/72 dark:text-foreground/82"
+                                            : "text-muted-foreground/40"
+                                            }`}
                                         >
                                           {formatRelativeTime(thread.createdAt)}
                                         </span>

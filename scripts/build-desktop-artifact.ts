@@ -102,7 +102,7 @@ function getDefaultArch(platform: typeof BuildPlatform.Type): typeof BuildArch.T
 class BuildScriptError extends Data.TaggedError("BuildScriptError")<{
   readonly message: string;
   readonly cause?: unknown;
-}> {}
+}> { }
 
 function resolveGitCommitHash(repoRoot: string): string {
   const result = spawnSync("git", ["rev-parse", "--short=12", "HEAD"], {
@@ -417,27 +417,73 @@ function resolveDesktopRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
+function parseGitHubRepository(value: string):
+  | {
+    readonly owner: string;
+    readonly repo: string;
+  }
+  | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  const ownerRepoMatch = trimmed.match(/^([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/);
+  if (ownerRepoMatch) {
+    const owner = ownerRepoMatch[1];
+    const repo = ownerRepoMatch[2];
+    if (owner && repo) {
+      return { owner, repo };
+    }
+  }
+
+  const githubPathMatch = trimmed.match(
+    /github\.com[:/]([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?(?:\/|$)/i,
+  );
+  if (!githubPathMatch) return undefined;
+
+  const owner = githubPathMatch[1];
+  const repo = githubPathMatch[2];
+  if (!owner || !repo) return undefined;
+
+  return { owner, repo };
+}
+
 function resolveGitHubPublishConfig():
   | {
-      readonly provider: "github";
-      readonly owner: string;
-      readonly repo: string;
-      readonly releaseType: "release";
-    }
+    readonly provider: "github";
+    readonly owner: string;
+    readonly repo: string;
+    readonly releaseType: "release";
+  }
   | undefined {
-  const rawRepo =
+  const envRepo =
     process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY?.trim() ||
     process.env.GITHUB_REPOSITORY?.trim() ||
     "";
-  if (!rawRepo) return undefined;
 
-  const [owner, repo, ...rest] = rawRepo.split("/");
-  if (!owner || !repo || rest.length > 0) return undefined;
+  const parsedEnvRepo = parseGitHubRepository(envRepo);
+  if (parsedEnvRepo) {
+    return {
+      provider: "github",
+      owner: parsedEnvRepo.owner,
+      repo: parsedEnvRepo.repo,
+      releaseType: "release",
+    };
+  }
+
+  const repositoryField = serverPackageJson.repository;
+  const repositoryUrl =
+    typeof repositoryField === "string"
+      ? repositoryField
+      : repositoryField && typeof repositoryField.url === "string"
+        ? repositoryField.url
+        : "";
+  const parsedRepositoryUrl = parseGitHubRepository(repositoryUrl);
+  if (!parsedRepositoryUrl) return undefined;
 
   return {
     provider: "github",
-    owner,
-    repo,
+    owner: parsedRepositoryUrl.owner,
+    repo: parsedRepositoryUrl.repo,
     releaseType: "release",
   };
 }

@@ -4,6 +4,7 @@ import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/con
 import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
+  getDesktopUpdateButtonLabel,
   getDesktopUpdateButtonTooltip,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
@@ -43,7 +44,7 @@ describe("desktop update button state", () => {
   it("keeps retry action available after a download error", () => {
     const state: DesktopUpdateState = {
       ...baseState,
-      status: "error",
+      status: "available",
       availableVersion: "1.1.0",
       message: "network timeout",
       errorContext: "download",
@@ -52,6 +53,18 @@ describe("desktop update button state", () => {
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
     expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to retry");
+  });
+
+  it("shows background download copy while update is being fetched", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "available",
+      availableVersion: "1.1.0",
+      errorContext: null,
+      canRetry: false,
+    };
+
+    expect(getDesktopUpdateButtonTooltip(state)).toContain("Downloading in background");
   });
 
   it("keeps install action available after an install error", () => {
@@ -167,6 +180,16 @@ describe("desktop update UI helpers", () => {
       shouldHighlightDesktopUpdateError({
         ...baseState,
         status: "error",
+        availableVersion: "1.1.0",
+        errorContext: "download",
+        canRetry: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldHighlightDesktopUpdateError({
+        ...baseState,
+        status: "available",
+        availableVersion: "1.1.0",
         errorContext: "download",
         canRetry: true,
       }),
@@ -179,6 +202,52 @@ describe("desktop update UI helpers", () => {
         canRetry: true,
       }),
     ).toBe(false);
+  });
+
+  it("shows an explicit update-ready label after download", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "downloaded",
+      downloadedVersion: "1.1.0",
+      availableVersion: "1.1.0",
+    };
+
+    expect(getDesktopUpdateButtonLabel(state)).toBe("Update ready");
+  });
+
+  it("shows a downloading label while download progress is active", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "downloading",
+      availableVersion: "1.1.0",
+      downloadPercent: 42.5,
+    };
+
+    expect(getDesktopUpdateButtonLabel(state)).toBe("Downloading 42%");
+  });
+
+  it("shows a downloading label during background auto-download startup", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "available",
+      availableVersion: "1.1.0",
+      errorContext: null,
+      canRetry: false,
+    };
+
+    expect(getDesktopUpdateButtonLabel(state)).toBe("Downloading");
+  });
+
+  it("shows a retry label after download failure", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "available",
+      availableVersion: "1.1.0",
+      errorContext: "download",
+      canRetry: true,
+    };
+
+    expect(getDesktopUpdateButtonLabel(state)).toBe("Retry download");
   });
 
   it("shows an Apple Silicon warning for Intel builds under Rosetta", () => {
