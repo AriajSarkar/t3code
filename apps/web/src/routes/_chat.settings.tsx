@@ -13,6 +13,7 @@ import { serverConfigQueryOptions } from "../lib/serverReactQuery";
 import { ensureNativeApi } from "../nativeApi";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { toastManager } from "../components/ui/toast";
 import {
   Select,
   SelectItem,
@@ -100,6 +101,7 @@ function SettingsRouteView() {
   const { settings, defaults, updateSettings } = useAppSettings();
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
   const [isOpeningKeybindings, setIsOpeningKeybindings] = useState(false);
+  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
   const [openKeybindingsError, setOpenKeybindingsError] = useState<string | null>(null);
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<ProviderKind, string>
@@ -119,6 +121,122 @@ function SettingsRouteView() {
       ? desktopUpdateState.currentVersion
       : APP_VERSION;
   const showVersionDownloadSpinner = isElectron && desktopUpdateState?.status === "downloading";
+  const isUpdateCheckInProgress =
+    isCheckingForUpdates || (isElectron && desktopUpdateState?.status === "checking");
+
+  const handleCheckForUpdates = useCallback(() => {
+    if (!isElectron) return;
+    const bridge = window.desktopBridge;
+    if (!bridge || typeof bridge.checkForUpdates !== "function") {
+      toastManager.add({
+        type: "warning",
+        title: "Update checks unavailable",
+        description: "This desktop build does not expose manual update checks.",
+      });
+      return;
+    }
+
+    setIsCheckingForUpdates(true);
+    void bridge
+      .checkForUpdates()
+      .then((result) => {
+        const state = result.state;
+
+        if (!result.accepted) {
+          if (!state.enabled) {
+            toastManager.add({
+              type: "warning",
+              title: "Updates unavailable",
+              description:
+                "Automatic updates are disabled or unavailable in this environment.",
+            });
+            return;
+          }
+          if (state.status === "checking") {
+            toastManager.add({
+              type: "info",
+              title: "Already checking",
+              description: "An update check is already in progress.",
+            });
+            return;
+          }
+          if (state.status === "downloading") {
+            toastManager.add({
+              type: "info",
+              title: "Update download in progress",
+              description: "A newer version is already downloading in the background.",
+            });
+            return;
+          }
+          if (state.status === "downloaded") {
+            toastManager.add({
+              type: "success",
+              title: "Update ready",
+              description: "Restart the app from the update button to install it.",
+            });
+            return;
+          }
+          toastManager.add({
+            type: "info",
+            title: "Could not start update check",
+            description: "Please try again in a moment.",
+          });
+          return;
+        }
+
+        if (!result.completed || state.status === "error") {
+          toastManager.add({
+            type: "error",
+            title: "Update check failed",
+            description:
+              state.message ?? "An unknown error occurred while checking for updates.",
+          });
+          return;
+        }
+
+        if (state.status === "up-to-date") {
+          toastManager.add({
+            type: "success",
+            title: "You're up to date",
+            description: `T3 Code ${state.currentVersion} is the newest available version.`,
+          });
+          return;
+        }
+
+        if (state.status === "downloaded") {
+          toastManager.add({
+            type: "success",
+            title: "Update ready",
+            description: "Restart the app from the update button to install it.",
+          });
+          return;
+        }
+
+        if (state.status === "available" || state.status === "downloading") {
+          toastManager.add({
+            type: "success",
+            title: "Update available",
+            description: "Downloading the update in the background.",
+          });
+          return;
+        }
+
+        toastManager.add({
+          type: "info",
+          title: "Update check completed",
+        });
+      })
+      .catch((error) => {
+        toastManager.add({
+          type: "error",
+          title: "Could not check for updates",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        });
+      })
+      .finally(() => {
+        setIsCheckingForUpdates(false);
+      });
+  }, []);
 
   const openKeybindingsFile = useCallback(() => {
     if (!keybindingsConfigPath) return;
@@ -245,11 +363,10 @@ function SettingsRouteView() {
                         type="button"
                         role="radio"
                         aria-checked={selected}
-                        className={`flex w-full items-start justify-between rounded-lg border px-3 py-2 text-left transition-colors ${
-                          selected
+                        className={`flex w-full items-start justify-between rounded-lg border px-3 py-2 text-left transition-colors ${selected
                             ? "border-primary/60 bg-primary/8 text-foreground"
                             : "border-border bg-background text-muted-foreground hover:bg-accent"
-                        }`}
+                          }`}
                         onClick={() => setTheme(option.value)}
                       >
                         <span className="flex flex-col">
@@ -701,6 +818,32 @@ function SettingsRouteView() {
                   </code>
                 </span>
               </div>
+
+              {isElectron ? (
+                <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Updates</p>
+                    <p className="text-xs text-muted-foreground">
+                      Manually check for a newer desktop version.
+                    </p>
+                  </div>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={handleCheckForUpdates}
+                    disabled={isUpdateCheckInProgress}
+                  >
+                    {isUpdateCheckInProgress ? (
+                      <>
+                        <LoaderIcon aria-hidden="true" className="size-3.5 animate-spin" />
+                        Checking...
+                      </>
+                    ) : (
+                      "Check for updates"
+                    )}
+                  </Button>
+                </div>
+              ) : null}
             </section>
           </div>
         </div>

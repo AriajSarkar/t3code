@@ -54,6 +54,7 @@ const OPEN_EXTERNAL_CHANNEL = "desktop:open-external";
 const MENU_ACTION_CHANNEL = "desktop:menu-action";
 const UPDATE_STATE_CHANNEL = "desktop:update-state";
 const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
+const UPDATE_CHECK_CHANNEL = "desktop:update-check";
 const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
 const STATE_DIR =
@@ -186,24 +187,24 @@ function installStdIoCapture(): void {
 
   const patchWrite =
     (streamName: "stdout" | "stderr", originalWrite: typeof process.stdout.write) =>
-    (
-      chunk: string | Uint8Array,
-      encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
-      callback?: (error?: Error | null) => void,
-    ): boolean => {
-      const encoding = typeof encodingOrCallback === "string" ? encodingOrCallback : undefined;
-      writeDesktopStreamChunk(streamName, chunk, encoding);
-      if (typeof encodingOrCallback === "function") {
-        return originalWrite(chunk, encodingOrCallback);
-      }
-      if (callback !== undefined) {
-        return originalWrite(chunk, encoding, callback);
-      }
-      if (encoding !== undefined) {
-        return originalWrite(chunk, encoding);
-      }
-      return originalWrite(chunk);
-    };
+      (
+        chunk: string | Uint8Array,
+        encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+        callback?: (error?: Error | null) => void,
+      ): boolean => {
+        const encoding = typeof encodingOrCallback === "string" ? encodingOrCallback : undefined;
+        writeDesktopStreamChunk(streamName, chunk, encoding);
+        if (typeof encodingOrCallback === "function") {
+          return originalWrite(chunk, encodingOrCallback);
+        }
+        if (callback !== undefined) {
+          return originalWrite(chunk, encoding, callback);
+        }
+        if (encoding !== undefined) {
+          return originalWrite(chunk, encoding);
+        }
+        return originalWrite(chunk);
+      };
 
   process.stdout.write = patchWrite("stdout", originalStdoutWrite);
   process.stderr.write = patchWrite("stderr", originalStderrWrite);
@@ -596,13 +597,13 @@ function configureApplicationMenu(): void {
         ...(process.platform === "darwin"
           ? []
           : [
-              {
-                label: "Settings...",
-                accelerator: "CmdOrCtrl+,",
-                click: () => dispatchMenuAction("open-settings"),
-              },
-              { type: "separator" as const },
-            ]),
+            {
+              label: "Settings...",
+              accelerator: "CmdOrCtrl+,",
+              click: () => dispatchMenuAction("open-settings"),
+            },
+            { type: "separator" as const },
+          ]),
         { role: process.platform === "darwin" ? "close" : "quit" },
       ],
     },
@@ -742,13 +743,17 @@ function shouldEnableAutoUpdates(): boolean {
   );
 }
 
-async function checkForUpdates(reason: string): Promise<void> {
-  if (isQuitting || !updaterConfigured || updateCheckInFlight) return;
+async function checkForUpdates(
+  reason: string,
+): Promise<{ accepted: boolean; completed: boolean }> {
+  if (isQuitting || !updaterConfigured || updateCheckInFlight) {
+    return { accepted: false, completed: false };
+  }
   if (updateState.status === "downloading" || updateState.status === "downloaded") {
     console.info(
       `[desktop-updater] Skipping update check (${reason}) while status=${updateState.status}.`,
     );
-    return;
+    return { accepted: false, completed: false };
   }
   updateCheckInFlight = true;
   setUpdateState(reduceDesktopUpdateStateOnCheckStart(updateState, new Date().toISOString()));
@@ -756,12 +761,14 @@ async function checkForUpdates(reason: string): Promise<void> {
 
   try {
     await autoUpdater.checkForUpdates();
+    return { accepted: true, completed: true };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     setUpdateState(
       reduceDesktopUpdateStateOnCheckFailure(updateState, message, new Date().toISOString()),
     );
     console.error(`[desktop-updater] Failed to check for updates: ${message}`);
+    return { accepted: true, completed: false };
   } finally {
     updateCheckInFlight = false;
   }
@@ -1083,11 +1090,11 @@ function registerIpcHandlers(): void {
     const owner = BrowserWindow.getFocusedWindow() ?? mainWindow;
     const result = owner
       ? await dialog.showOpenDialog(owner, {
-          properties: ["openDirectory", "createDirectory"],
-        })
+        properties: ["openDirectory", "createDirectory"],
+      })
       : await dialog.showOpenDialog({
-          properties: ["openDirectory", "createDirectory"],
-        });
+        properties: ["openDirectory", "createDirectory"],
+      });
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
   });
@@ -1129,14 +1136,14 @@ function registerIpcHandlers(): void {
 
       const popupPosition =
         position &&
-        Number.isFinite(position.x) &&
-        Number.isFinite(position.y) &&
-        position.x >= 0 &&
-        position.y >= 0
+          Number.isFinite(position.x) &&
+          Number.isFinite(position.y) &&
+          position.x >= 0 &&
+          position.y >= 0
           ? {
-              x: Math.floor(position.x),
-              y: Math.floor(position.y),
-            }
+            x: Math.floor(position.x),
+            y: Math.floor(position.y),
+          }
           : null;
 
       const window = BrowserWindow.getFocusedWindow() ?? mainWindow;
@@ -1190,6 +1197,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.removeHandler(UPDATE_GET_STATE_CHANNEL);
   ipcMain.handle(UPDATE_GET_STATE_CHANNEL, async () => updateState);
+
+  ipcMain.removeHandler(UPDATE_CHECK_CHANNEL);
+  ipcMain.handle(UPDATE_CHECK_CHANNEL, async () => {
+    const result = await checkForUpdates("renderer");
+    return {
+      accepted: result.accepted,
+      completed: result.completed,
+      state: updateState,
+    } satisfies DesktopUpdateActionResult;
+  });
 
   ipcMain.removeHandler(UPDATE_DOWNLOAD_CHANNEL);
   ipcMain.handle(UPDATE_DOWNLOAD_CHANNEL, async () => {
