@@ -187,24 +187,24 @@ function installStdIoCapture(): void {
 
   const patchWrite =
     (streamName: "stdout" | "stderr", originalWrite: typeof process.stdout.write) =>
-      (
-        chunk: string | Uint8Array,
-        encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
-        callback?: (error?: Error | null) => void,
-      ): boolean => {
-        const encoding = typeof encodingOrCallback === "string" ? encodingOrCallback : undefined;
-        writeDesktopStreamChunk(streamName, chunk, encoding);
-        if (typeof encodingOrCallback === "function") {
-          return originalWrite(chunk, encodingOrCallback);
-        }
-        if (callback !== undefined) {
-          return originalWrite(chunk, encoding, callback);
-        }
-        if (encoding !== undefined) {
-          return originalWrite(chunk, encoding);
-        }
-        return originalWrite(chunk);
-      };
+    (
+      chunk: string | Uint8Array,
+      encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+      callback?: (error?: Error | null) => void,
+    ): boolean => {
+      const encoding = typeof encodingOrCallback === "string" ? encodingOrCallback : undefined;
+      writeDesktopStreamChunk(streamName, chunk, encoding);
+      if (typeof encodingOrCallback === "function") {
+        return originalWrite(chunk, encodingOrCallback);
+      }
+      if (callback !== undefined) {
+        return originalWrite(chunk, encoding, callback);
+      }
+      if (encoding !== undefined) {
+        return originalWrite(chunk, encoding);
+      }
+      return originalWrite(chunk);
+    };
 
   process.stdout.write = patchWrite("stdout", originalStdoutWrite);
   process.stderr.write = patchWrite("stderr", originalStderrWrite);
@@ -597,13 +597,13 @@ function configureApplicationMenu(): void {
         ...(process.platform === "darwin"
           ? []
           : [
-            {
-              label: "Settings...",
-              accelerator: "CmdOrCtrl+,",
-              click: () => dispatchMenuAction("open-settings"),
-            },
-            { type: "separator" as const },
-          ]),
+              {
+                label: "Settings...",
+                accelerator: "CmdOrCtrl+,",
+                click: () => dispatchMenuAction("open-settings"),
+              },
+              { type: "separator" as const },
+            ]),
         { role: process.platform === "darwin" ? "close" : "quit" },
       ],
     },
@@ -743,9 +743,7 @@ function shouldEnableAutoUpdates(): boolean {
   );
 }
 
-async function checkForUpdates(
-  reason: string,
-): Promise<{ accepted: boolean; completed: boolean }> {
+async function checkForUpdates(reason: string): Promise<{ accepted: boolean; completed: boolean }> {
   if (isQuitting || !updaterConfigured || updateCheckInFlight) {
     return { accepted: false, completed: false };
   }
@@ -1090,11 +1088,11 @@ function registerIpcHandlers(): void {
     const owner = BrowserWindow.getFocusedWindow() ?? mainWindow;
     const result = owner
       ? await dialog.showOpenDialog(owner, {
-        properties: ["openDirectory", "createDirectory"],
-      })
+          properties: ["openDirectory", "createDirectory"],
+        })
       : await dialog.showOpenDialog({
-        properties: ["openDirectory", "createDirectory"],
-      });
+          properties: ["openDirectory", "createDirectory"],
+        });
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
   });
@@ -1136,14 +1134,14 @@ function registerIpcHandlers(): void {
 
       const popupPosition =
         position &&
-          Number.isFinite(position.x) &&
-          Number.isFinite(position.y) &&
-          position.x >= 0 &&
-          position.y >= 0
+        Number.isFinite(position.x) &&
+        Number.isFinite(position.y) &&
+        position.x >= 0 &&
+        position.y >= 0
           ? {
-            x: Math.floor(position.x),
-            y: Math.floor(position.y),
-          }
+              x: Math.floor(position.x),
+              y: Math.floor(position.y),
+            }
           : null;
 
       const window = BrowserWindow.getFocusedWindow() ?? mainWindow;
