@@ -429,7 +429,7 @@ function parseGitHubRepository(value: string):
   const ownerRepoMatch = trimmed.match(/^([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/);
   if (ownerRepoMatch) {
     const owner = ownerRepoMatch[1];
-    const repo = ownerRepoMatch[2];
+    const repo = ownerRepoMatch[2]?.replace(/\.git$/i, "");
     if (owner && repo) {
       return { owner, repo };
     }

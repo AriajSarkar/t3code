@@ -278,6 +278,7 @@ let updateCheckInFlight = false;
 let updateDownloadInFlight = false;
 let updaterConfigured = false;
 let updateState: DesktopUpdateState = initialUpdateState();
+const updateStateWaiters = new Set<(state: DesktopUpdateState) => void>();
 
 function resolveUpdaterErrorContext(): DesktopUpdateErrorContext {
   if (updateDownloadInFlight) return "download";
@@ -724,11 +725,44 @@ function emitUpdateState(): void {
     if (window.isDestroyed()) continue;
     window.webContents.send(UPDATE_STATE_CHANNEL, updateState);
   }
+  for (const waiter of updateStateWaiters) {
+    waiter(updateState);
+  }
 }
 
 function setUpdateState(patch: Partial<DesktopUpdateState>): void {
   updateState = { ...updateState, ...patch };
   emitUpdateState();
+}
+
+function waitForUpdateState(
+  predicate: (state: DesktopUpdateState) => boolean,
+  timeoutMs: number,
+): Promise<void> {
+  if (predicate(updateState)) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const onStateChange = (state: DesktopUpdateState) => {
+      if (!predicate(state)) {
+        return;
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      updateStateWaiters.delete(onStateChange);
+      resolve();
+    };
+
+    updateStateWaiters.add(onStateChange);
+    timeoutId = setTimeout(() => {
+      updateStateWaiters.delete(onStateChange);
+      resolve();
+    }, timeoutMs);
+    timeoutId.unref?.();
+  });
 }
 
 function shouldEnableAutoUpdates(): boolean {
@@ -759,7 +793,8 @@ async function checkForUpdates(reason: string): Promise<{ accepted: boolean; com
 
   try {
     await autoUpdater.checkForUpdates();
-    return { accepted: true, completed: true };
+    await waitForUpdateState((state) => state.status !== "checking", 2_000);
+    return { accepted: true, completed: updateState.status !== "error" };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     setUpdateState(

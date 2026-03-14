@@ -10,6 +10,7 @@ import { useTheme } from "../hooks/useTheme";
 import { serverConfigQueryOptions } from "../lib/serverReactQuery";
 import { ensureNativeApi } from "../nativeApi";
 import { Button } from "../components/ui/button";
+import { getDesktopUpdateCheckToast } from "../components/desktopUpdate.logic";
 import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
 import {
@@ -130,89 +131,7 @@ function SettingsRouteView() {
     void bridge
       .checkForUpdates()
       .then((result) => {
-        const state = result.state;
-
-        if (!result.accepted) {
-          if (!state.enabled) {
-            toastManager.add({
-              type: "warning",
-              title: "Updates unavailable",
-              description: "Automatic updates are disabled or unavailable in this environment.",
-            });
-            return;
-          }
-          if (state.status === "checking") {
-            toastManager.add({
-              type: "info",
-              title: "Already checking",
-              description: "An update check is already in progress.",
-            });
-            return;
-          }
-          if (state.status === "downloading") {
-            toastManager.add({
-              type: "info",
-              title: "Update download in progress",
-              description: "A newer version is already downloading in the background.",
-            });
-            return;
-          }
-          if (state.status === "downloaded") {
-            toastManager.add({
-              type: "success",
-              title: "Update ready",
-              description: "Restart the app from the update button to install it.",
-            });
-            return;
-          }
-          toastManager.add({
-            type: "info",
-            title: "Could not start update check",
-            description: "Please try again in a moment.",
-          });
-          return;
-        }
-
-        if (!result.completed || state.status === "error") {
-          toastManager.add({
-            type: "error",
-            title: "Update check failed",
-            description: state.message ?? "An unknown error occurred while checking for updates.",
-          });
-          return;
-        }
-
-        if (state.status === "up-to-date") {
-          toastManager.add({
-            type: "success",
-            title: "You're up to date",
-            description: `T3 Code ${state.currentVersion} is the newest available version.`,
-          });
-          return;
-        }
-
-        if (state.status === "downloaded") {
-          toastManager.add({
-            type: "success",
-            title: "Update ready",
-            description: "Restart the app from the update button to install it.",
-          });
-          return;
-        }
-
-        if (state.status === "available" || state.status === "downloading") {
-          toastManager.add({
-            type: "success",
-            title: "Update available",
-            description: "Downloading the update in the background.",
-          });
-          return;
-        }
-
-        toastManager.add({
-          type: "info",
-          title: "Update check completed",
-        });
+        toastManager.add(getDesktopUpdateCheckToast(result));
       })
       .catch((error) => {
         toastManager.add({
@@ -317,7 +236,7 @@ function SettingsRouteView() {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         {isElectron && (
-          <div className="drag-region flex h-13 shrink-0 items-center border-b border-border px-5">
+          <div className="drag-region flex h-[52px] shrink-0 items-center border-b border-border px-5">
             <span className="text-xs font-medium tracking-wide text-muted-foreground/70">
               Settings
             </span>
@@ -351,10 +270,11 @@ function SettingsRouteView() {
                         type="button"
                         role="radio"
                         aria-checked={selected}
-                        className={`flex w-full items-start justify-between rounded-lg border px-3 py-2 text-left transition-colors ${selected
+                        className={`flex w-full items-start justify-between rounded-lg border px-3 py-2 text-left transition-colors ${
+                          selected
                             ? "border-primary/60 bg-primary/8 text-foreground"
                             : "border-border bg-background text-muted-foreground hover:bg-accent"
-                          }`}
+                        }`}
                         onClick={() => setTheme(option.value)}
                       >
                         <span className="flex flex-col">

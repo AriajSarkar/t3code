@@ -4,6 +4,7 @@ import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/con
 import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
+  getDesktopUpdateCheckToast,
   getDesktopUpdateButtonTooltip,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
@@ -141,6 +142,118 @@ describe("getDesktopUpdateActionError", () => {
       },
     };
     expect(getDesktopUpdateActionError(result)).toBeNull();
+  });
+});
+
+describe("getDesktopUpdateCheckToast", () => {
+  it("warns when updates are unavailable", () => {
+    expect(
+      getDesktopUpdateCheckToast({
+        accepted: false,
+        completed: false,
+        state: {
+          ...baseState,
+          enabled: false,
+          status: "disabled",
+        },
+      }),
+    ).toEqual({
+      type: "warning",
+      title: "Updates unavailable",
+      description: "Automatic updates are disabled or unavailable in this environment.",
+    });
+  });
+
+  it("surfaces in-flight checks and downloads", () => {
+    expect(
+      getDesktopUpdateCheckToast({
+        accepted: false,
+        completed: false,
+        state: {
+          ...baseState,
+          status: "checking",
+        },
+      }).title,
+    ).toBe("Already checking");
+
+    expect(
+      getDesktopUpdateCheckToast({
+        accepted: false,
+        completed: false,
+        state: {
+          ...baseState,
+          status: "downloading",
+          availableVersion: "1.1.0",
+        },
+      }).title,
+    ).toBe("Update download in progress");
+  });
+
+  it("shows failures from the check result", () => {
+    expect(
+      getDesktopUpdateCheckToast({
+        accepted: true,
+        completed: false,
+        state: {
+          ...baseState,
+          status: "error",
+          message: "network unavailable",
+          errorContext: "check",
+          canRetry: true,
+        },
+      }),
+    ).toEqual({
+      type: "error",
+      title: "Update check failed",
+      description: "network unavailable",
+    });
+  });
+
+  it("shows success states for up-to-date and downloaded updates", () => {
+    expect(
+      getDesktopUpdateCheckToast({
+        accepted: true,
+        completed: true,
+        state: {
+          ...baseState,
+          status: "up-to-date",
+        },
+      }),
+    ).toEqual({
+      type: "success",
+      title: "You're up to date",
+      description: "T3 Code 1.0.0 is the newest available version.",
+    });
+
+    expect(
+      getDesktopUpdateCheckToast({
+        accepted: true,
+        completed: true,
+        state: {
+          ...baseState,
+          status: "downloaded",
+          availableVersion: "1.1.0",
+          downloadedVersion: "1.1.0",
+        },
+      }).title,
+    ).toBe("Update ready");
+  });
+
+  it("keeps the toast accurate when the updater is still settling", () => {
+    expect(
+      getDesktopUpdateCheckToast({
+        accepted: true,
+        completed: true,
+        state: {
+          ...baseState,
+          status: "checking",
+        },
+      }),
+    ).toEqual({
+      type: "info",
+      title: "Update check started",
+      description: "Looking for a newer desktop version now.",
+    });
   });
 });
 
