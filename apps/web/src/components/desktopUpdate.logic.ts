@@ -36,39 +36,6 @@ export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | nul
   return state?.hostArch === "arm64" && state.appArch === "x64";
 }
 
-export function isDesktopUpdateDownloadInProgress(state: DesktopUpdateState | null): boolean {
-  if (!state) {
-    return false;
-  }
-
-  if (state.status === "downloading") {
-    return true;
-  }
-
-  return state.status === "available" && state.errorContext !== "download";
-}
-
-export function getDesktopUpdateButtonLabel(state: DesktopUpdateState): string | null {
-  if (isDesktopUpdateDownloadInProgress(state)) {
-    const percent =
-      state.status === "downloading" && typeof state.downloadPercent === "number"
-        ? ` ${Math.floor(state.downloadPercent)}%`
-        : "";
-    return `Downloading${percent}`;
-  }
-
-  const action = resolveDesktopUpdateButtonAction(state);
-  if (action === "install") {
-    return "Update ready";
-  }
-
-  if (action === "download") {
-    return state.errorContext === "download" ? "Retry download" : "Download update";
-  }
-
-  return null;
-}
-
 export function isDesktopUpdateButtonDisabled(state: DesktopUpdateState | null): boolean {
   return state?.status === "downloading";
 }
@@ -90,10 +57,7 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
 
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
   if (state.status === "available") {
-    if (state.errorContext === "download" && state.availableVersion) {
-      return `Download failed for ${state.availableVersion}. Click to retry.`;
-    }
-    return `Update ${state.availableVersion ?? "available"} found. Downloading in background.`;
+    return `Update ${state.availableVersion ?? "available"} ready to download`;
   }
   if (state.status === "downloading") {
     const progress =
@@ -127,7 +91,6 @@ export function shouldToastDesktopUpdateActionResult(result: DesktopUpdateAction
 }
 
 export function shouldHighlightDesktopUpdateError(state: DesktopUpdateState | null): boolean {
-  if (!state) return false;
-  if (resolveDesktopUpdateButtonAction(state) === "none") return false;
+  if (!state || state.status !== "error") return false;
   return state.errorContext === "download" || state.errorContext === "install";
 }
