@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { type ProviderKind } from "@t3tools/contracts";
 import { getModelOptions, normalizeModelSlug } from "@t3tools/shared/model";
 import { MAX_CUSTOM_MODEL_LENGTH, useAppSettings } from "../appSettings";
@@ -20,7 +20,12 @@ import {
 } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 import { APP_VERSION } from "../branding";
-import { canCheckForUpdate, getCheckForUpdateButtonLabel } from "../components/desktopUpdate.logic";
+import {
+  canCheckForUpdate,
+  getCheckForUpdateButtonLabel,
+  resolveDesktopUpdateButtonAction,
+} from "../components/desktopUpdate.logic";
+import { desktopUpdateStateQueryOptions } from "../lib/desktopUpdateReactQuery";
 import { SidebarInset } from "~/components/ui/sidebar";
 
 const THEME_OPTIONS = [
@@ -95,29 +100,62 @@ function patchCustomModels(provider: ProviderKind, models: string[]) {
 
 function DesktopUpdateCheckSection() {
   const queryClient = useQueryClient();
-  const updateStateQuery = useQuery({
-    queryKey: ["desktop", "updateState"],
-    queryFn: async () => {
-      const bridge = window.desktopBridge;
-      if (!bridge || typeof bridge.getUpdateState !== "function") return null;
-      return bridge.getUpdateState();
-    },
-    staleTime: Infinity,
-    enabled: isElectron,
-  });
+  const updateStateQuery = useQuery(desktopUpdateStateQueryOptions());
   const [checkError, setCheckError] = useState<string | null>(null);
 
   const updateState = updateStateQuery.data ?? null;
 
-  const handleCheckForUpdate = useCallback(() => {
+  useEffect(() => {
     const bridge = window.desktopBridge;
-    if (!bridge || typeof bridge.checkForUpdate !== "function") return;
+    if (!bridge || typeof bridge.onUpdateState !== "function") return;
+
+    const opts = desktopUpdateStateQueryOptions();
+    const unsubscribe = bridge.onUpdateState((nextState) => {
+      queryClient.setQueryData(opts.queryKey, nextState);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [queryClient]);
+
+  const handleButtonClick = useCallback(() => {
+    const bridge = window.desktopBridge;
+    if (!bridge) return;
     setCheckError(null);
 
+    const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
+    const opts = desktopUpdateStateQueryOptions();
+
+    if (action === "download") {
+      void bridge
+        .downloadUpdate()
+        .then((result) => {
+          queryClient.setQueryData(opts.queryKey, result.state);
+        })
+        .catch((error: unknown) => {
+          setCheckError(error instanceof Error ? error.message : "Download failed.");
+        });
+      return;
+    }
+
+    if (action === "install") {
+      void bridge
+        .installUpdate()
+        .then((result) => {
+          queryClient.setQueryData(opts.queryKey, result.state);
+        })
+        .catch((error: unknown) => {
+          setCheckError(error instanceof Error ? error.message : "Install failed.");
+        });
+      return;
+    }
+
+    if (typeof bridge.checkForUpdate !== "function") return;
     void bridge
       .checkForUpdate()
       .then((result) => {
-        queryClient.setQueryData(["desktop", "updateState"], result.state);
+        queryClient.setQueryData(opts.queryKey, result.state);
         if (!result.checked) {
           setCheckError(
             result.state.message ?? "Automatic updates are not available in this build.",
@@ -127,7 +165,7 @@ function DesktopUpdateCheckSection() {
       .catch((error: unknown) => {
         setCheckError(error instanceof Error ? error.message : "Update check failed.");
       });
-  }, [queryClient]);
+  }, [queryClient, updateState]);
 
   const buttonLabel = getCheckForUpdateButtonLabel(updateState);
   const buttonDisabled = !canCheckForUpdate(updateState);
@@ -143,12 +181,7 @@ function DesktopUpdateCheckSection() {
               : "Check for available updates."}
           </p>
         </div>
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={buttonDisabled}
-          onClick={handleCheckForUpdate}
-        >
+        <Button size="xs" variant="outline" disabled={buttonDisabled} onClick={handleButtonClick}>
           {buttonLabel}
         </Button>
       </div>
