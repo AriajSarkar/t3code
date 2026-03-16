@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
-import { type ProviderKind, type DesktopUpdateState } from "@t3tools/contracts";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
+import { type ProviderKind } from "@t3tools/contracts";
 import { getModelOptions, normalizeModelSlug } from "@t3tools/shared/model";
 import { MAX_CUSTOM_MODEL_LENGTH, useAppSettings } from "../appSettings";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
@@ -94,40 +94,20 @@ function patchCustomModels(provider: ProviderKind, models: string[]) {
 }
 
 function DesktopUpdateCheckSection() {
-  const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(null);
+  const queryClient = useQueryClient();
+  const updateStateQuery = useQuery({
+    queryKey: ["desktop", "updateState"],
+    queryFn: async () => {
+      const bridge = window.desktopBridge;
+      if (!bridge || typeof bridge.getUpdateState !== "function") return null;
+      return bridge.getUpdateState();
+    },
+    staleTime: Infinity,
+    enabled: isElectron,
+  });
   const [checkError, setCheckError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const bridge = window.desktopBridge;
-    if (
-      !bridge ||
-      typeof bridge.getUpdateState !== "function" ||
-      typeof bridge.onUpdateState !== "function"
-    ) {
-      return;
-    }
-
-    let disposed = false;
-    let receivedSubscriptionUpdate = false;
-    const unsubscribe = bridge.onUpdateState((nextState) => {
-      if (disposed) return;
-      receivedSubscriptionUpdate = true;
-      setUpdateState(nextState);
-    });
-
-    void bridge
-      .getUpdateState()
-      .then((nextState) => {
-        if (disposed || receivedSubscriptionUpdate) return;
-        setUpdateState(nextState);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      unsubscribe();
-    };
-  }, []);
+  const updateState = updateStateQuery.data ?? null;
 
   const handleCheckForUpdate = useCallback(() => {
     const bridge = window.desktopBridge;
@@ -137,7 +117,7 @@ function DesktopUpdateCheckSection() {
     void bridge
       .checkForUpdate()
       .then((result) => {
-        setUpdateState(result.state);
+        queryClient.setQueryData(["desktop", "updateState"], result.state);
         if (!result.checked) {
           setCheckError(
             result.state.message ?? "Automatic updates are not available in this build.",
@@ -147,7 +127,7 @@ function DesktopUpdateCheckSection() {
       .catch((error: unknown) => {
         setCheckError(error instanceof Error ? error.message : "Update check failed.");
       });
-  }, []);
+  }, [queryClient]);
 
   const buttonLabel = getCheckForUpdateButtonLabel(updateState);
   const buttonDisabled = !canCheckForUpdate(updateState);
