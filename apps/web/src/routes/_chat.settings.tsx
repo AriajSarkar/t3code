@@ -104,6 +104,11 @@ function DesktopUpdateCheckSection() {
     }
 
     if (action === "install") {
+      const version = updateState?.downloadedVersion ?? updateState?.availableVersion;
+      const confirmed = window.confirm(
+        `Install update${version ? ` ${version}` : ""} and restart T3 Code?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.`,
+      );
+      if (!confirmed) return;
       void bridge
         .installUpdate()
         .then((result) => {

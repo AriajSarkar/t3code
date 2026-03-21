@@ -1,10 +1,10 @@
 import {
+  ArrowDownToLineIcon,
   ArrowLeftIcon,
   ChevronRightIcon,
   FolderIcon,
   GitPullRequestIcon,
   PlusIcon,
-  RocketIcon,
   SettingsIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -1062,7 +1062,9 @@ export default function Sidebar() {
         ? "text-sky-400"
         : shouldHighlightDesktopUpdateError(desktopUpdateState)
           ? "text-rose-500 animate-pulse"
-          : "text-amber-500 animate-pulse";
+          : desktopUpdateState?.status === "available"
+            ? "text-emerald-500"
+            : "text-muted-foreground";
   const newThreadShortcutLabel = useMemo(
     () =>
       shortcutLabelForCommand(keybindings, "chat.newLocal") ??
@@ -1106,6 +1108,11 @@ export default function Sidebar() {
     }
 
     if (desktopUpdateButtonAction === "install") {
+      const version = desktopUpdateState.downloadedVersion ?? desktopUpdateState.availableVersion;
+      const confirmed = window.confirm(
+        `Install update${version ? ` ${version}` : ""} and restart T3 Code?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.`,
+      );
+      if (!confirmed) return;
       void bridge
         .installUpdate()
         .then((result) => {
@@ -1185,10 +1192,10 @@ export default function Sidebar() {
                       aria-label={desktopUpdateTooltip}
                       aria-disabled={desktopUpdateButtonDisabled || undefined}
                       disabled={desktopUpdateButtonDisabled}
-                      className={`inline-flex size-7 ml-auto mt-1.5 items-center justify-center rounded-md text-muted-foreground transition-colors ${desktopUpdateButtonInteractivityClasses} ${desktopUpdateButtonClasses}`}
+                      className={`inline-flex size-7 ml-auto mt-1.5 items-center justify-center rounded-md transition-colors ${desktopUpdateButtonInteractivityClasses} ${desktopUpdateButtonClasses}`}
                       onClick={handleDesktopUpdateButtonClick}
                     >
-                      <RocketIcon className="size-3.5" />
+                      <ArrowDownToLineIcon className="size-3.5" />
                     </button>
                   }
                 />
