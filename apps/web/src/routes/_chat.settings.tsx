@@ -27,7 +27,6 @@ import { SidebarTrigger } from "../components/ui/sidebar";
 import { Switch } from "../components/ui/switch";
 import {
   canCheckForUpdate,
-  getCheckForUpdateButtonLabel,
   getDesktopUpdateButtonTooltip,
   resolveDesktopUpdateButtonAction,
 } from "../components/desktopUpdate.logic";
@@ -139,9 +138,18 @@ function DesktopUpdateCheckSection() {
       });
   }, [queryClient, updateState]);
 
-  const buttonLabel = getCheckForUpdateButtonLabel(updateState);
-  const buttonDisabled = !canCheckForUpdate(updateState);
+  const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
   const buttonTooltip = updateState ? getDesktopUpdateButtonTooltip(updateState) : null;
+  const buttonDisabled = !canCheckForUpdate(updateState);
+
+  const actionLabel: Record<string, string> = { download: "Download", install: "Install" };
+  const statusLabel: Record<string, string> = {
+    checking: "Checking…",
+    downloading: "Downloading…",
+    "up-to-date": "Up to Date",
+  };
+  const buttonLabel =
+    actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Check for Updates";
 
   return (
     <SettingsRow
@@ -1073,7 +1081,6 @@ function SettingsRouteView() {
               />
               {isElectron ? <DesktopUpdateCheckSection /> : null}
             </SettingsSection>
-
           </div>
         </div>
       </div>
