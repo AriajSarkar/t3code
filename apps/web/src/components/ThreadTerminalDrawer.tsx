@@ -359,12 +359,13 @@ function TerminalViewport({
 
     terminal.attachCustomKeyEventHandler((event) => {
       const currentKeybindings = keybindingsRef.current;
+      const options = { context: { terminalFocus: true, terminalOpen: true } };
       if (
-        isTerminalToggleShortcut(event, currentKeybindings) ||
-        isTerminalSplitShortcut(event, currentKeybindings) ||
-        isTerminalNewShortcut(event, currentKeybindings) ||
-        isTerminalCloseShortcut(event, currentKeybindings) ||
-        isDiffToggleShortcut(event, currentKeybindings)
+        isTerminalToggleShortcut(event, currentKeybindings, options) ||
+        isTerminalSplitShortcut(event, currentKeybindings, options) ||
+        isTerminalNewShortcut(event, currentKeybindings, options) ||
+        isTerminalCloseShortcut(event, currentKeybindings, options) ||
+        isDiffToggleShortcut(event, currentKeybindings, options)
       ) {
         return false;
       }
