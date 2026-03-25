@@ -4159,6 +4159,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
             onCloseTerminal={closeTerminal}
             onHeightChange={setTerminalHeight}
             onAddTerminalContext={addTerminalContextToDraft}
+            keybindings={keybindings}
           />
         );
       })()}
