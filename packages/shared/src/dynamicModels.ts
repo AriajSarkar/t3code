@@ -17,7 +17,25 @@ export function parseDynamicModelList(raw: unknown): ServerProviderModel[] | und
 
   const models: ServerProviderModel[] = [];
   for (const entry of rawModels) {
-    if (!entry || typeof entry !== "object") continue;
+    if (!entry) continue;
+
+    if (typeof entry === "string") {
+      models.push({
+        slug: entry,
+        name: entry,
+        isCustom: true,
+        capabilities: {
+          reasoningEffortLevels: [],
+          supportsFastMode: false,
+          supportsThinkingToggle: false,
+          contextWindowOptions: [],
+          promptInjectedEffortLevels: [],
+        },
+      });
+      continue;
+    }
+
+    if (typeof entry !== "object") continue;
     const record = entry as Record<string, unknown>;
 
     const slug = firstString(record, "id", "model", "value", "slug");
