@@ -25,7 +25,8 @@ import {
 import { parseDynamicModelList } from "@t3tools/shared/dynamicModels";
 import { makeManagedServerProvider } from "../makeManagedServerProvider";
 import { ClaudeProvider } from "../Services/ClaudeProvider";
-import { ServerSettingsError, ServerSettingsService } from "../../serverSettings";
+import { ServerSettingsService } from "../../serverSettings";
+import { ServerSettingsError } from "@t3tools/contracts";
 
 const PROVIDER = "claudeAgent" as const;
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
@@ -427,17 +428,16 @@ const probeClaudeCapabilities = (binaryPath: string) => {
   );
 };
 
-const runClaudeCommand = (args: ReadonlyArray<string>) =>
-  Effect.gen(function* () {
-    const claudeSettings = yield* Effect.service(ServerSettingsService).pipe(
-      Effect.flatMap((service) => service.getSettings),
-      Effect.map((settings) => settings.providers.claudeAgent),
-    );
-    const command = ChildProcess.make(claudeSettings.binaryPath, [...args], {
-      shell: process.platform === "win32",
-    });
-    return yield* spawnAndCollect(claudeSettings.binaryPath, command);
+const runClaudeCommand = Effect.fn("runClaudeCommand")(function* (args: ReadonlyArray<string>) {
+  const claudeSettings = yield* Effect.service(ServerSettingsService).pipe(
+    Effect.flatMap((service) => service.getSettings),
+    Effect.map((settings) => settings.providers.claudeAgent),
+  );
+  const command = ChildProcess.make(claudeSettings.binaryPath, [...args], {
+    shell: process.platform === "win32",
   });
+  return yield* spawnAndCollect(claudeSettings.binaryPath, command);
+});
 
 export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(function* (
   resolveAccountCapabilities?: (
