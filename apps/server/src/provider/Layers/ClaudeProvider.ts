@@ -22,6 +22,7 @@ import {
   spawnAndCollect,
   type CommandResult,
 } from "../providerSnapshot";
+import { parseDynamicModelList } from "@t3tools/shared/dynamicModels";
 import { makeManagedServerProvider } from "../makeManagedServerProvider";
 import { ClaudeProvider } from "../Services/ClaudeProvider";
 import { ServerSettingsError, ServerSettingsService } from "../../serverSettings";
@@ -410,7 +411,7 @@ const probeClaudeCapabilities = (binaryPath: string) => {
       },
     });
     const init = await q.initializationResult();
-    return { subscriptionType: init.account?.subscriptionType };
+    return { subscriptionType: init.account?.subscriptionType, modelsRaw: init.models };
   }).pipe(
     Effect.ensuring(
       Effect.sync(() => {
@@ -439,7 +440,11 @@ const runClaudeCommand = (args: ReadonlyArray<string>) =>
   });
 
 export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(function* (
-  resolveSubscriptionType?: (binaryPath: string) => Effect.Effect<string | undefined>,
+  resolveAccountCapabilities?: (
+    binaryPath: string,
+  ) => Effect.Effect<
+    { subscriptionType: string | undefined; modelsRaw: unknown | undefined } | undefined
+  >,
 ): Effect.fn.Return<
   ServerProvider,
   ServerSettingsError,
@@ -545,17 +550,25 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 
   let subscriptionType: string | undefined;
   let authMethod: string | undefined;
+  let modelsRaw: unknown | undefined;
 
   if (Result.isSuccess(authProbe) && Option.isSome(authProbe.success)) {
     subscriptionType = extractSubscriptionTypeFromOutput(authProbe.success.value);
     authMethod = extractClaudeAuthMethodFromOutput(authProbe.success.value);
   }
 
-  if (!subscriptionType && resolveSubscriptionType) {
-    subscriptionType = yield* resolveSubscriptionType(claudeSettings.binaryPath);
+  // The probe gives us both subscription type (if missing) and the model list.
+  if (resolveAccountCapabilities) {
+    const caps = yield* resolveAccountCapabilities(claudeSettings.binaryPath);
+    if (caps) {
+      if (!subscriptionType) subscriptionType = caps.subscriptionType;
+      modelsRaw = caps.modelsRaw;
+    }
   }
 
-  const resolvedModels = adjustModelsForSubscription(models, subscriptionType);
+  const parsedModels = parseDynamicModelList(modelsRaw);
+  const baseModels = parsedModels ?? models;
+  const resolvedModels = adjustModelsForSubscription(baseModels, subscriptionType);
 
   // ── Handle auth results (same logic as before, adjusted models) ──
 
@@ -621,15 +634,14 @@ export const ClaudeProviderLive = Layer.effect(
     const serverSettings = yield* ServerSettingsService;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
-    const subscriptionProbeCache = yield* Cache.make({
+    const accountProbeCache = yield* Cache.make({
       capacity: 1,
       timeToLive: Duration.minutes(5),
-      lookup: (binaryPath: string) =>
-        probeClaudeCapabilities(binaryPath).pipe(Effect.map((r) => r?.subscriptionType)),
+      lookup: (binaryPath: string) => probeClaudeCapabilities(binaryPath),
     });
 
     const checkProvider = checkClaudeProviderStatus((binaryPath) =>
-      Cache.get(subscriptionProbeCache, binaryPath),
+      Cache.get(accountProbeCache, binaryPath),
     ).pipe(
       Effect.provideService(ServerSettingsService, serverSettings),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

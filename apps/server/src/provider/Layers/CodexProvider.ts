@@ -32,6 +32,7 @@ import {
   spawnAndCollect,
   type CommandResult,
 } from "../providerSnapshot";
+import { parseDynamicModelList } from "@t3tools/shared/dynamicModels";
 import { makeManagedServerProvider } from "../makeManagedServerProvider";
 import {
   formatCodexCliUpgradeMessage,
@@ -325,7 +326,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   resolveAccount?: (input: {
     readonly binaryPath: string;
     readonly homePath?: string;
-  }) => Effect.Effect<CodexAccountSnapshot | undefined>,
+  }) => Effect.Effect<{ account: CodexAccountSnapshot; modelsRaw: unknown } | undefined>,
 ): Effect.fn.Return<
   ServerProvider,
   ServerSettingsError,
@@ -456,13 +457,21 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
     Effect.result,
   );
-  const account = resolveAccount
+  const accountCapabilities = resolveAccount
     ? yield* resolveAccount({
         binaryPath: codexSettings.binaryPath,
         homePath: codexSettings.homePath,
       })
     : undefined;
-  const resolvedModels = adjustCodexModelsForAccount(models, account);
+
+  const account = accountCapabilities?.account;
+  const parsedModels = parseDynamicModelList(accountCapabilities?.modelsRaw);
+  const baseModels = parsedModels ?? BUILT_IN_MODELS;
+
+  const resolvedModels = adjustCodexModelsForAccount(
+    providerModelsFromSettings(baseModels, PROVIDER, codexSettings.customModels),
+    account,
+  );
 
   if (Result.isFailure(authProbe)) {
     const error = authProbe.failure;

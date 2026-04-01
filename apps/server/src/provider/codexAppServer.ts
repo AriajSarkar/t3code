@@ -44,7 +44,7 @@ export async function probeCodexAccount(input: {
   readonly binaryPath: string;
   readonly homePath?: string;
   readonly signal?: AbortSignal;
-}): Promise<CodexAccountSnapshot> {
+}): Promise<{ account: CodexAccountSnapshot; modelsRaw: unknown }> {
   return await new Promise((resolve, reject) => {
     const child = spawn(input.binaryPath, ["app-server"], {
       env: {
@@ -57,6 +57,21 @@ export async function probeCodexAccount(input: {
     const output = readline.createInterface({ input: child.stdout });
 
     let completed = false;
+    let accountPayload: unknown = undefined;
+    let modelsRawPayload: unknown = undefined;
+    let accountDone = false;
+    let modelsDone = false;
+
+    const checkResolve = () => {
+      if (accountDone && modelsDone) {
+        finish(() =>
+          resolve({
+            account: readCodexAccountSnapshot(accountPayload),
+            modelsRaw: modelsRawPayload,
+          }),
+        );
+      }
+    };
 
     const cleanup = () => {
       output.removeAllListeners();
@@ -121,6 +136,7 @@ export async function probeCodexAccount(input: {
 
         writeMessage({ method: "initialized" });
         writeMessage({ id: 2, method: "account/read", params: {} });
+        writeMessage({ id: 3, method: "model/list", params: {} });
         return;
       }
 
@@ -131,7 +147,25 @@ export async function probeCodexAccount(input: {
           return;
         }
 
-        finish(() => resolve(readCodexAccountSnapshot(response.result)));
+        accountPayload = response.result;
+        accountDone = true;
+        checkResolve();
+        return;
+      }
+
+      if (response.id === 3) {
+        const errorMessage = readErrorMessage(response);
+        if (errorMessage) {
+          // If model/list fails, we just won't have dynamic models. Don't fail the whole probe.
+          modelsDone = true;
+          checkResolve();
+          return;
+        }
+
+        modelsRawPayload = response.result;
+        modelsDone = true;
+        checkResolve();
+        return;
       }
     });
 
